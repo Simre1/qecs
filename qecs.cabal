@@ -1,0 +1,66 @@
+cabal-version:      3.0
+name:               qecs
+version:            0.1.0.0
+-- synopsis:
+-- description:
+license:            MIT
+license-file:       LICENSE
+author:             Simre1
+maintainer:         simre4775@gmail.com
+-- copyright:
+category:           Game
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+-- extra-source-files:
+
+common common
+    ghc-options: -Wall
+    default-language: GHC2021
+    default-extensions:
+        OverloadedStrings
+        OverloadedLabels
+        TemplateHaskell
+        QuasiQuotes
+        TypeFamilies
+        LambdaCase
+        DataKinds
+        DuplicateRecordFields
+        NoFieldSelectors
+
+library
+    import:           common
+    exposed-modules:  
+        Qecs.Compile.Compile
+        Qecs.Compile.CreateQuery
+        Qecs.Compile.MyQ
+        Qecs.Compile.Environment
+        Qecs.Compile.ExtractField
+        Qecs.Simulation
+        Qecs.Component
+        Qecs.Bundle
+        Qecs.Store.Store
+        Qecs.Store.Map
+        Qecs.Entity
+    build-depends:    
+        base ^>=4.17.0.0,
+        containers,
+        vector,
+        optics-core,
+        template-haskell,
+        transformers,
+        th-lift,
+        lift-type
+    hs-source-dirs:   src
+
+test-suite qecs-test
+    import:           common
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    other-modules:
+        BasicSimulation
+    build-depends:
+        base ^>=4.17.0.0,
+        qecs,
+        tasty,
+        tasty-hunit
