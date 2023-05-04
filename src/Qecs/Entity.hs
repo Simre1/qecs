@@ -6,7 +6,7 @@ import GHC.Generics (Generic)
 
 newtype Entity = Entity Word32 deriving (Eq, Ord, Show)
 
-data EntityStore = EntityStore
+newtype EntityStore = EntityStore
   { counter :: IORef Word32
   }
   deriving (Generic)

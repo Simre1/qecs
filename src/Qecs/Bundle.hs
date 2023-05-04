@@ -4,10 +4,10 @@
 module Qecs.Bundle where
 
 import Data.Functor.Identity
-import Qecs.Component (Component, describeComponent)
-import Language.Haskell.TH
-import Type.Reflection (Typeable)
 import GHC.Generics (Generic)
+import Language.Haskell.TH
+import Qecs.Component (Component, describeComponent)
+import Type.Reflection (Typeable)
 
 newtype BundleRead a = BundleRead (Component a) deriving (Eq, Show)
 
@@ -35,7 +35,8 @@ bundleTraverseF f (BundleThree a b c) =
 data VariableFunction a b = VariableFunction
   { coFunction :: Code Q (a -> b),
     contraFunction :: Code Q (b -> a)
-  } deriving Generic
+  }
+  deriving (Generic)
 
 bundleFoldF :: (forall x y z. VariableFunction (x, y) z -> f x -> f y -> f z) -> f () -> Bundle f a -> f a
 bundleFoldF _ empty BundleEmpty = empty
@@ -55,7 +56,6 @@ bundleFoldF combine empty (BundleThree a b c) =
     )
     (bundleFoldF combine empty c)
 
-
 type family BaseCase a where
   BaseCase () = False
   BaseCase (a, b) = False
@@ -66,24 +66,27 @@ type family BaseCase a where
 
 type GetBundle f a = GetBundle' (BaseCase a) f a
 
+getBundle :: forall f a. (GetBundle f a) => Bundle f a
+getBundle = getBundle' @(BaseCase a) @f @a
+
 class GetBundle' (baseCase :: Bool) f i where
-  getBundle :: Bundle f i
+  getBundle' :: Bundle f i
 
 instance (GetBundle f a, GetBundle f b) => GetBundle' False f (a, b) where
-  getBundle = BundleTwo (getBundle @(BaseCase a) @f @a) (getBundle @(BaseCase b) @f @b)
+  getBundle' = BundleTwo (getBundle' @(BaseCase a) @f @a) (getBundle' @(BaseCase b) @f @b)
 
 instance (GetBundle f a, GetBundle f b, GetBundle f c) => GetBundle' False f (a, b, c) where
-  getBundle =
+  getBundle' =
     BundleThree
-      (getBundle @(BaseCase a) @f @a)
-      (getBundle @(BaseCase b) @f @b)
-      (getBundle @(BaseCase c) @f @c)
+      (getBundle' @(BaseCase a) @f @a)
+      (getBundle' @(BaseCase b) @f @b)
+      (getBundle' @(BaseCase c) @f @c)
 
 instance (Typeable a) => GetBundle' True BundleRead a where
-  getBundle = BundleSingle $ BundleRead $ describeComponent @a
+  getBundle' = BundleSingle $ BundleRead $ describeComponent @a
 
 instance (Typeable a) => GetBundle' True BundleWrite a where
-  getBundle = BundleSingle $ BundleWrite $ describeComponent @a
+  getBundle' = BundleSingle $ BundleWrite $ describeComponent @a
 
 instance GetBundle' False f () where
-  getBundle = BundleEmpty
+  getBundle' = BundleEmpty

@@ -39,8 +39,8 @@ getStoreForComponent component@(Component tr) = do
       ||]
 
 data WorldEnvironment = WorldEnvironment
-  { runtimeStores :: V.Vector RuntimeStore,
-    entityStore :: EntityStore
+  { runtimeStores :: !(V.Vector RuntimeStore),
+    entityStore :: !EntityStore
   }
   deriving (Generic)
 

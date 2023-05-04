@@ -1,6 +1,6 @@
 {-# LANGUAGE DerivingVia #-}
 
-module BasicSimulation where
+module TestSimulations where
 
 import Data.Monoid
 import GHC.Generics

@@ -12,20 +12,24 @@ import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
 import Data.Typeable (cast)
 import Data.Vector qualified as V
-import Qecs.Bundle (Bundle (..), BundleRead (..), BundleWrite (..))
-import Qecs.Compile.CreateQuery (WriteF (..), compileQuery, writeBundle, compileIOQuery)
-import Qecs.Compile.Environment
-import Qecs.Component
-import Qecs.Entity
-import Qecs.Simulation
-import Qecs.Store.Store
+import Debug.Trace
 import Language.Haskell.TH (Code (..), Q)
 import Language.Haskell.TH qualified as TH
 import LiftType (typeRepToType)
 import Optics.Core
+import Qecs.Bundle (Bundle (..), BundleRead (..), BundleWrite (..))
+import Qecs.Compile.CreateQuery (WriteF (..), compileQuery, compileQueryIO, writeBundle)
+import Qecs.Compile.Environment
+import Qecs.Compile.Optimize (optimize)
+import Qecs.Component
+import Qecs.Entity
+import Qecs.Simulation
+import Qecs.Store.Store
+  ( SomeStoreCapabilities (SomeStoreCapabilities),
+    StoreCapabilities (component),
+  )
 import Type.Reflection (SomeTypeRep (SomeTypeRep), TypeRep (..), someTypeRep, typeRep, withTypeable)
 import Unsafe.Coerce (unsafeCoerce)
-import Debug.Trace
 
 viewCode :: Code Q a -> Code Q String
 viewCode code = Code $ do
@@ -55,7 +59,7 @@ compile simulation = Code $ do
       SimulationSequence s1 s2 -> do
         gS1 <- generateSimulate s1
         gS2 <- generateSimulate s2
-        pure [||$$(gS1) >=> $$(gS2)||]
+        pure [||$$gS1 >=> $$gS2||]
       SimulationParallel s1 s2 -> do
         gS1 <- generateSimulate s1
         gS2 <- generateSimulate s2
@@ -75,11 +79,8 @@ compile simulation = Code $ do
           localCompileEnvironment
             (#activeStores %~ M.insert (SomeComponent component) (storeIndex, SomeStoreCapabilities storeCapabilities))
             (generateSimulate simulationWithAdditionalStore)
-      
-      SimulationQuery accumulate acc queryF queryIn queryOut ->
-        compileQuery accumulate acc queryF queryIn queryOut
-      SimulationIOQuery accumulate acc queryF queryIn queryOut ->
-        compileIOQuery accumulate acc queryF queryIn queryOut
+      SimulationQuery q -> compileQuery q
+      SimulationQueryIO qIO -> compileQueryIO qIO
       SimulationCreateEntity bundle -> do
         (WriteF write) <- writeBundle bundle
         pure
@@ -101,22 +102,12 @@ compile simulation = Code $ do
           \w -> do
             let size = M.size storesCode
                 storesCode = $$neededStoresCode
-                runtimeStores = V.generate size $ \i ->
-                  (storesCode M.! i) w
-            WorldEnvironment runtimeStores <$> createEntityStore
+                !runtimeStores = V.generate size $ \i ->
+                  let !store = (storesCode M.! i) w
+                   in store
+                !env = WorldEnvironment runtimeStores <$> createEntityStore
+            env
           ||]
-
--- getSomeTypeRep :: Some2F StoreCapabilities -> SomeTypeRep
--- getSomeTypeRep (Some2F _ storeRep _) = toSomeTypeRep storeRep
-
--- getStore :: Data world => world -> Some2F StoreCapabilities -> s
--- getStore world (Some2F storageCapabilities _ _) = getStore' world (unsafeCoerce $ storageCapabilities ^. #store)
-
--- getStore :: (Data world) => SomeTypeRep -> Code Q (world -> s)
--- getStore (SomeTypeRep tr) = getStore' tr
-
--- getStore' :: (Data world) => TypeRep s -> Code Q (world -> s)
--- getStore' tr = TH.unTypeCode (withTypeable tr [||extractFromWorld||])
 
 extractFromWorld :: forall a world. (Typeable a, Data world) => world -> a
 extractFromWorld world =

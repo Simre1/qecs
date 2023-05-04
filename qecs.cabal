@@ -26,10 +26,15 @@ common common
         DataKinds
         DuplicateRecordFields
         NoFieldSelectors
+        BangPatterns
 
 library
     import:           common
     exposed-modules:  
+        Data.SparseSet.Boxed
+        Data.SparseSet.Storable
+        Data.SparseSet.Unboxed
+
         Qecs.Compile.Compile
         Qecs.Compile.CreateQuery
         Qecs.Compile.MyQ
@@ -40,7 +45,9 @@ library
         Qecs.Bundle
         Qecs.Store.Store
         Qecs.Store.Map
+        Qecs.Store.SparseSet
         Qecs.Entity
+        Qecs.Compile.Optimize
     build-depends:    
         base ^>=4.17.0.0,
         containers,
@@ -49,8 +56,10 @@ library
         template-haskell,
         transformers,
         th-lift,
-        lift-type
+        lift-type,
+        deepseq
     hs-source-dirs:   src
+    ghc-options: -O2
 
 test-suite qecs-test
     import:           common
@@ -58,9 +67,36 @@ test-suite qecs-test
     hs-source-dirs:   test
     main-is:          Main.hs
     other-modules:
-        BasicSimulation
+        TestSimulations
     build-depends:
         base ^>=4.17.0.0,
         qecs,
         tasty,
-        tasty-hunit
+        tasty-hunit,
+        deepseq
+
+executable qecs-bench
+    import:           common
+    hs-source-dirs:   bench
+    main-is:          Main.hs
+    other-modules:
+        BenchSimulations
+    build-depends:
+        base ^>=4.17.0.0,
+        qecs,
+        gauge,
+        deepseq,
+        linear
+    ghc-options: -O2
+
+
+executable qecs-profile
+    import:           common
+    hs-source-dirs:   profile
+    main-is:          Main.hs
+    other-modules:
+        ProfileSimulations
+    build-depends:
+        base ^>=4.17.0.0,
+        qecs
+    ghc-options: -O2

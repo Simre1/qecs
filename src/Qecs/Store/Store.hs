@@ -16,14 +16,12 @@ data StoreCapabilities s a = StoreCapabilities
     delete :: Code Q (s -> Entity -> IO ()),
     has :: Code Q (s -> Entity -> IO Bool),
     members :: Code Q (s -> IO Int),
-    iterate :: StoreIterate s a
+    iterate :: Code Q (s -> (Entity -> a -> IO ()) -> IO ())
   }
   deriving (Generic)
 
 data SomeStoreCapabilities where
   SomeStoreCapabilities :: StoreCapabilities s a -> SomeStoreCapabilities
-
-data StoreIterate s a = StoreIterate (forall b. Code Q (s -> b -> (b -> Entity -> a -> IO b) -> IO b))
 
 defaultStoreCapabilities :: forall s c. (Typeable c, Typeable s) => StoreCapabilities s c
 defaultStoreCapabilities =
@@ -35,7 +33,7 @@ defaultStoreCapabilities =
       delete = unimplementedCapability @s @c "delete",
       has = unimplementedCapability @s @c "has",
       members = unimplementedCapability @s @c "members",
-      iterate = StoreIterate $ unimplementedCapability @s @c "iterate"
+      iterate = unimplementedCapability @s @c "iterate"
     }
 
 unitStoreCapabilities :: Typeable s => StoreCapabilities s ()
