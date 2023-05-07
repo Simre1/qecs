@@ -1,18 +1,22 @@
-import ProfileSimulations
 import Control.Monad
-import Qecs.Compile.Compile (compile, viewCode)
-import Qecs.Store.Map
+import Data.Proxy
+import ProfileSimulations
+import Qecs.Compile.Compile (compile)
 import Qecs.Store.SparseSet
 
 cmapMapStoreProgram :: IO ()
 cmapMapStoreProgram = do
-  !store1 <- sparseSetStorableStore
-  !store2 <- sparseSetStorableStore
-  let (computeState, run) = $$(compile mapStoreSimulation)
-  !state <- computeState $ World store1 store2
+  let (computeState, run) =
+        $$( compile
+              ( World
+                  (sparseSetStorableStore [||Proxy @Position||])
+                  (sparseSetStorableStore [||Proxy @Velocity||])
+              )
+              mapStoreSimulation
+          )
+  !state <- computeState
   v <- run state ()
   print v
-
 
 main :: IO ()
 main = do

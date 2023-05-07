@@ -9,6 +9,8 @@ import Unsafe.Coerce (unsafeCoerce)
 
 newtype Component a = Component (TypeRep a) deriving (Show, Eq, Ord)
 
+newtype ComponentId = ComponentId Int deriving (Show, Eq, Ord)
+
 describeComponent :: (Typeable a) => Component a
 describeComponent = Component typeRep
 
@@ -22,8 +24,3 @@ instance Eq SomeComponent where
 
 instance Ord SomeComponent where
   (SomeComponent (Component component)) `compare` (SomeComponent (Component component')) = SomeTypeRep component `compare` SomeTypeRep component'
-
-fromSomeStore :: forall a. (Typeable a) => SomeComponent -> Maybe (Component a)
-fromSomeStore (SomeComponent component) =
-  let wantedComponent = describeComponent @a
-   in if wantedComponent == unsafeCoerce component then Just (unsafeCoerce component) else Nothing

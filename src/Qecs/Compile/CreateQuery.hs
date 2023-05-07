@@ -15,13 +15,14 @@ import Qecs.Compile.Environment
 import Qecs.Entity (Entity)
 import Qecs.Simulation
 import Qecs.Store.Store (StoreCapabilities (..))
+import Control.HigherKindedData
 
-data BundleReadfo where
-  BundleReadfo :: Bundle BundleRead i -> Bundle BundleWrite o -> BundleReadfo
+-- data BundleReadfo where
+--   BundleReadfo :: Bundle i BundleRead -> Bundle o BundleWrite -> BundleReadfo
 
--- deriving instance Show BundleReadfo
+-- -- deriving instance Show BundleReadfo
 
-newtype QueryCreator = QueryCreator [BundleReadfo] deriving (Semigroup, Monoid)
+-- newtype QueryCreator = QueryCreator [BundleReadfo] deriving (Semigroup, Monoid)
 
 -- collectQueries :: Simulation a b -> [BundleReadfo]
 -- collectQueries simulation = case simulation of
@@ -35,7 +36,7 @@ data QueryCapabilities = QueryCapabilities
 
 compileQuery ::
   Query Identity a b ->
-  CompileM w (Code Q (a -> ExecutionM b))
+  CompileM (Code Q (a -> ExecutionM b))
 compileQuery = \case
   QueryMap f bundleRead bundleWrite -> do
     (IterateF iterateQ _ _ _) <- iterateBundle bundleRead
@@ -116,7 +117,7 @@ compileQuery = \case
 
 compileQueryIO ::
   Query IO a b ->
-  CompileM w (Code Q (a -> ExecutionM b))
+  CompileM (Code Q (a -> ExecutionM b))
 compileQueryIO = \case
   QueryMap f bundleRead bundleWrite -> do
     (IterateF iterateQ _ _ _) <- iterateBundle bundleRead
@@ -210,10 +211,10 @@ data IterateF b a = IterateF
     read :: Code Q (ExecutionM (Entity -> IO a))
   }
 
-readBundle :: Bundle BundleRead i -> CompileM w (ReadF i)
+readBundle :: Bundle i BundleRead -> CompileM (ReadF i)
 readBundle bundle = do
   bundleRead <-
-    bundleTraverseF
+    htraverse
       ( \(BundleRead c) -> do
           RuntimeStoreAndCapabilities storeCapabilities getStore <- getStoreForComponent c
           pure $
@@ -226,23 +227,23 @@ readBundle bundle = do
       )
       bundle
   pure $
-    bundleFoldF
+    hfold
       ( \combine (ReadF readX) (ReadF readY) ->
           ReadF
             [||
             do
               readX' <- $$readX
               readY' <- $$readY
-              pure $ \e -> curry $$(combine ^. #coFunction) <$> readX' e <*> readY' e
+              pure $ \e -> curry $$(combine ^. #co) <$> readX' e <*> readY' e
             ||]
       )
       (ReadF [||pure (\_ -> pure ())||])
       bundleRead
 
-writeBundle :: Bundle BundleWrite i -> CompileM w (WriteF i)
+writeBundle :: Bundle i BundleWrite -> CompileM (WriteF i)
 writeBundle bundle = do
   bundleWrite <-
-    bundleTraverseF
+    htraverse
       ( \(BundleWrite c) -> do
           RuntimeStoreAndCapabilities storeCapabilities getStore <- getStoreForComponent c
           pure $
@@ -256,7 +257,7 @@ writeBundle bundle = do
       )
       bundle
   pure $
-    bundleFoldF
+    hfold
       ( \combine (WriteF writeQX) (WriteF writeQY) ->
           WriteF
             [||
@@ -264,17 +265,17 @@ writeBundle bundle = do
               writeX <- $$writeQX
               writeY <- $$writeQY
               pure $ \e z ->
-                let (x, y) = $$(combine ^. #contraFunction) z
+                let (x, y) = $$(combine ^. #contra) z
                  in writeX e x *> writeY e y
             ||]
       )
       (WriteF [||pure $ \_ _ -> pure ()||])
       bundleWrite
 
-iterateBundle :: Bundle BundleRead i -> CompileM w (IterateF b i)
+iterateBundle :: Bundle i BundleRead -> CompileM (IterateF b i)
 iterateBundle bundle = do
   bundleIterate <-
-    bundleTraverseF
+    htraverse
       ( \(BundleRead c) -> do
           RuntimeStoreAndCapabilities storeCapabilities getStore <- getStoreForComponent c
           let iterateQ = storeCapabilities ^. #iterate
@@ -299,7 +300,7 @@ iterateBundle bundle = do
       )
       bundle
   pure $
-    bundleFoldF
+    hfold
       ( \combine (IterateF iterateQX membersQX hasQX readQX) (IterateF iterateQY membersQY hasQY readQY) ->
           IterateF
             [||
@@ -316,7 +317,7 @@ iterateBundle bundle = do
                       yContained <- hasY e
                       when yContained $ do
                         yValues <- liftIO $ readY e
-                        let zValues = $$(combine ^. #coFunction) (xValues, yValues)
+                        let zValues = $$(combine ^. #co) (xValues, yValues)
                         f e zValues
                 else do
                   iterateY <- $$iterateQY
@@ -327,7 +328,7 @@ iterateBundle bundle = do
                       xContained <- hasX e
                       when xContained $ do
                         xValues <- liftIO $ readX e
-                        let zValues = $$(combine ^. #coFunction) (xValues, yValues)
+                        let zValues = $$(combine ^. #co) (xValues, yValues)
                         f e zValues
             ||]
             [||
@@ -344,7 +345,7 @@ iterateBundle bundle = do
             do
               readX <- $$readQX
               readY <- $$readQY
-              pure $ \e -> curry $$(combine ^. #coFunction) <$> readX e <*> readY e
+              pure $ \e -> curry $$(combine ^. #co) <$> readX e <*> readY e
             ||]
       )
       ( IterateF

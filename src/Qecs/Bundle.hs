@@ -3,8 +3,8 @@
 
 module Qecs.Bundle where
 
+import Control.HigherKindedData
 import Data.Functor.Identity
-import GHC.Generics (Generic)
 import Language.Haskell.TH
 import Qecs.Component (Component, describeComponent)
 import Type.Reflection (Typeable)
@@ -13,48 +13,42 @@ newtype BundleRead a = BundleRead (Component a) deriving (Eq, Show)
 
 newtype BundleWrite a = BundleWrite (Component a) deriving (Eq, Show)
 
-data Bundle f a where
-  BundleEmpty :: Bundle f ()
-  BundleSingle :: f a -> Bundle f a
-  BundleTwo :: Bundle f a -> Bundle f b -> Bundle f (a, b)
-  BundleThree :: Bundle f a -> Bundle f b -> Bundle f c -> Bundle f (a, b, c)
+data Bundle a f where
+  BundleEmpty :: Bundle () f
+  BundleSingle :: f a -> Bundle a f
+  BundleTwo :: Bundle a f -> Bundle b f -> Bundle (a, b) f
+  BundleThree :: Bundle a f -> Bundle b f -> Bundle c f -> Bundle (a, b, c) f
 
-bundleMapF :: (forall x. f x -> g x) -> Bundle f a -> Bundle g a
-bundleMapF f = runIdentity . bundleTraverseF (Identity . f)
+instance HFunctor (Bundle a) where
+  hmap f = runIdentity . htraverse (Identity . f)
 
-bundleTraverseF :: (Applicative m) => (forall x. f x -> m (g x)) -> Bundle f a -> m (Bundle g a)
-bundleTraverseF _ BundleEmpty = pure BundleEmpty
-bundleTraverseF f (BundleSingle a) = BundleSingle <$> f a
-bundleTraverseF f (BundleTwo a b) = BundleTwo <$> bundleTraverseF f a <*> bundleTraverseF f b
-bundleTraverseF f (BundleThree a b c) =
-  BundleThree
-    <$> bundleTraverseF f a
-    <*> bundleTraverseF f b
-    <*> bundleTraverseF f c
+instance HTraversable (Bundle a) where
+  htraverse _ BundleEmpty = pure BundleEmpty
+  htraverse f (BundleSingle a) = BundleSingle <$> f a
+  htraverse f (BundleTwo a b) = BundleTwo <$> htraverse f a <*> htraverse f b
+  htraverse f (BundleThree a b c) =
+    BundleThree
+      <$> htraverse f a
+      <*> htraverse f b
+      <*> htraverse f c
 
-data VariableFunction a b = VariableFunction
-  { coFunction :: Code Q (a -> b),
-    contraFunction :: Code Q (b -> a)
-  }
-  deriving (Generic)
-
-bundleFoldF :: (forall x y z. VariableFunction (x, y) z -> f x -> f y -> f z) -> f () -> Bundle f a -> f a
-bundleFoldF _ empty BundleEmpty = empty
-bundleFoldF _ _ (BundleSingle f) = f
-bundleFoldF combine empty (BundleTwo a b) =
-  combine
-    (VariableFunction [||id||] [||id||])
-    (bundleFoldF combine empty a)
-    (bundleFoldF combine empty b)
-bundleFoldF combine empty (BundleThree a b c) =
-  combine
-    (VariableFunction [||(\((a, b), c) -> (a, b, c))||] [||(\(a, b, c) -> ((a, b), c))||])
-    ( combine
-        (VariableFunction [||id||] [||id||])
-        (bundleFoldF combine empty a)
-        (bundleFoldF combine empty b)
-    )
-    (bundleFoldF combine empty c)
+instance HFoldable (Code Q) Bundle where
+  hfold _ empty BundleEmpty = empty
+  hfold _ _ (BundleSingle f) = f
+  hfold combine empty (BundleTwo a b) =
+    combine
+      (VariableFunction [||id||] [||id||])
+      (hfold combine empty a)
+      (hfold combine empty b)
+  hfold combine empty (BundleThree a b c) =
+    combine
+      (VariableFunction [||(\((a, b), c) -> (a, b, c))||] [||(\(a, b, c) -> ((a, b), c))||])
+      ( combine
+          (VariableFunction [||id||] [||id||])
+          (hfold combine empty a)
+          (hfold combine empty b)
+      )
+      (hfold combine empty c)
 
 type family BaseCase a where
   BaseCase () = False
@@ -66,11 +60,11 @@ type family BaseCase a where
 
 type GetBundle f a = GetBundle' (BaseCase a) f a
 
-getBundle :: forall f a. (GetBundle f a) => Bundle f a
+getBundle :: forall f a. (GetBundle f a) => Bundle a f
 getBundle = getBundle' @(BaseCase a) @f @a
 
 class GetBundle' (baseCase :: Bool) f i where
-  getBundle' :: Bundle f i
+  getBundle' :: Bundle i f
 
 instance (GetBundle f a, GetBundle f b) => GetBundle' False f (a, b) where
   getBundle' = BundleTwo (getBundle' @(BaseCase a) @f @a) (getBundle' @(BaseCase b) @f @b)

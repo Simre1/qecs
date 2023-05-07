@@ -31,6 +31,8 @@ common common
 library
     import:           common
     exposed-modules:  
+        Control.HigherKindedData
+
         Data.SparseSet.Boxed
         Data.SparseSet.Storable
         Data.SparseSet.Unboxed
@@ -57,7 +59,8 @@ library
         transformers,
         th-lift,
         lift-type,
-        deepseq
+        deepseq,
+        constraints
     hs-source-dirs:   src
     ghc-options: -O2
 
@@ -86,7 +89,8 @@ executable qecs-bench
         qecs,
         gauge,
         deepseq,
-        linear
+        linear,
+        template-haskell
     ghc-options: -O2
 
 

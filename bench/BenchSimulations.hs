@@ -3,50 +3,37 @@
 module BenchSimulations where
 
 import Control.DeepSeq
+import Control.HigherKindedData
 import Data.Foldable (Foldable (..))
 import Data.Monoid
 import Foreign (Storable (..), castPtr, plusPtr)
 import GHC.Generics
+import Language.Haskell.TH
+import Qecs.Compile.Compile
 import Qecs.Simulation
-import Qecs.Store.Map (MapStore, mapStoreCapabilities)
-import Qecs.Store.SparseSet
-import Debug.Trace
+import Qecs.Store.Store
+import Qecs.Compile.Environment (WorldEnvironment(WorldEnvironment))
 
-data MapStores = MapStores
-  { position :: !(MapStore BenchPosition),
-    velocity :: !(MapStore BenchVelocity)
+data World f = World
+  { position :: f Position,
+    velocity :: f Velocity
   }
   deriving (Generic)
 
-data SparseSets = SparseSets
-  { position :: !(SparseSet BenchPosition),
-    velocity :: !(SparseSet BenchVelocity)
-  }
-  deriving (Generic)
+instance HTraversable World where
+  htraverse f (World p v) = World <$> f p <*> f v
 
-data SparseSetsStorable = SparseSetsStorable
-  { position :: !(SparseSetStorable BenchPosition),
-    velocity :: !(SparseSetStorable BenchVelocity)
-  }
-  deriving (Generic)
+data Position = Position !Int !Int deriving (Show)
 
-instance NFData MapStores
-
-instance NFData SparseSets
-
-instance NFData SparseSetsStorable
-
-data BenchPosition = BenchPosition !Int !Int deriving (Show)
-
-instance Storable BenchPosition where
+instance Storable Position where
   sizeOf _ = 2 * sizeOf (undefined :: Int)
   alignment _ = alignment (undefined :: Int)
   peek ptr = do
     let p = castPtr ptr
     v1 <- peek p
     v2 <- peek (p `plusPtr` sizeOf (undefined :: Int))
-    pure $ BenchPosition v1 v2
-  poke ptr (BenchPosition v1 v2) = do
+    pure $ Position v1 v2
+  poke ptr (Position v1 v2) = do
     let p = castPtr ptr
     poke p v1
     poke (p `plusPtr` sizeOf (undefined :: Int)) v2
@@ -56,79 +43,56 @@ instance Storable BenchPosition where
   {-# INLINE poke #-}
   {-# INLINE peek #-}
 
-data BenchVelocity = BenchVelocity !Int !Int deriving (Show)
+data Velocity = Velocity !Int !Int deriving (Show)
 
-instance Storable BenchVelocity where
+instance Storable Velocity where
   sizeOf _ = 2 * sizeOf (undefined :: Int)
   alignment _ = alignment (undefined :: Int)
   peek ptr = do
     let p = castPtr ptr
     v1 <- peek p
     v2 <- peek (p `plusPtr` sizeOf (undefined :: Int))
-    pure $ BenchVelocity v1 v2
-  poke ptr (BenchVelocity v1 v2) = do
+    pure $ Velocity v1 v2
+  poke ptr (Velocity v1 v2) = do
     let p = castPtr ptr
     poke p v1
     poke (p `plusPtr` sizeOf (undefined :: Int)) v2
-    
+
   {-# INLINE sizeOf #-}
   {-# INLINE alignment #-}
   {-# INLINE poke #-}
   {-# INLINE peek #-}
-  
-allocateEntitiesMapStoreBench :: Simulation MapStores () ()
-allocateEntitiesMapStoreBench =
-  useStore [||\(MapStores p _) -> p||] (mapStoreCapabilities @BenchPosition) $
-    useStore [||\(MapStores _ v) -> v||] (mapStoreCapabilities @BenchVelocity) $
-      spure [||replicate 1000 (BenchPosition 0 0, BenchVelocity 1 1)||]
-        >>> makeEntities
-        >>> spure [||replicate 9000 (BenchPosition 0 0)||]
-        >>> makeEntities
-        >>> SimulationPure [||()||]
 
-cmapMapStoreBench :: Simulation MapStores () Int
-cmapMapStoreBench =
-  useStore [||\(MapStores p _) -> p||] (mapStoreCapabilities @BenchPosition) $
-    useStore [||\(MapStores _ v) -> v||] (mapStoreCapabilities @BenchVelocity) $
-      foldl' (\b _ -> b >>> applyVelocity) applyVelocity [1 .. 5]
-        >>> cfold [||(\(BenchPosition a b) -> Sum a + Sum b)||]
-        >>> SimulationArr [||getSum||]
+allocateEntities :: Simulation () ()
+allocateEntities =
+  spure [||replicate 1000 (Position 0 0, Velocity 1 1)||]
+    >>> makeEntities
+    >>> spure [||replicate 9000 (Position 0 0)||]
+    >>> makeEntities
+    >>> SimulationPure [||()||]
 
-allocateEntitiesSparseSetBench :: Simulation SparseSets () ()
-allocateEntitiesSparseSetBench =
-  useStore [||\(SparseSets p _) -> p||] (sparseSetCapabilities @BenchPosition) $
-    useStore [||\(SparseSets _ v) -> v||] (sparseSetCapabilities @BenchVelocity) $
-      spure [||replicate 1000 (BenchPosition 0 0, BenchVelocity 1 1)||]
-        >>> makeEntities
-        >>> spure [||replicate 9000 (BenchPosition 0 0)||]
-        >>> makeEntities
-        >>> SimulationPure [||()||]
+applyVelocity :: Simulation () Int
+applyVelocity =
+  foldl' (\b _ -> b >>> f) f [1 .. 5]
+    >>> cfold [||(\(Position a b) -> Sum a + Sum b)||]
+    >>> SimulationArr [||getSum||]
+  where
+    f :: Simulation a ()
+    f = cmap [||\(Position a b, Velocity da db) -> Position (a + da) (b + db)||]
 
-cmapSparseSetBench :: Simulation SparseSets () Int
-cmapSparseSetBench =
-  useStore [||\(SparseSets p _) -> p||] (sparseSetCapabilities @BenchPosition) $
-    useStore [||\(SparseSets _ v) -> v||] (sparseSetCapabilities @BenchVelocity) $
-      foldl' (\b _ -> b >>> applyVelocity) applyVelocity [1 .. 5]
-        >>> cfold [||(\(BenchPosition a b) -> Sum a + Sum b)||]
-        >>> SimulationArr [||getSum||]
+newtype Bench a = Bench (IO Int)
 
-allocateEntitiesSparseSetStorableBench :: Simulation SparseSetsStorable () ()
-allocateEntitiesSparseSetStorableBench =
-  useStore [||\(SparseSetsStorable p _) -> p||] (sparseSetStorableCapabilities @BenchPosition) $
-    useStore [||\(SparseSetsStorable _ v) -> v||] (sparseSetStorableCapabilities @BenchVelocity) $
-      spure [||replicate 1000 (BenchPosition 0 0, BenchVelocity 1 1)||]
-        >>> makeEntities
-        >>> spure [||replicate 9000 (BenchPosition 0 0)||]
-        >>> makeEntities
-        >>> SimulationPure [||()||]
+instance NFData (Bench a) where
+  rnf (Bench _) = ()
 
-cmapSparseSetStorableBench :: Simulation SparseSetsStorable () Int
-cmapSparseSetStorableBench =
-  useStore [||\(SparseSetsStorable p _) -> p||] (sparseSetStorableCapabilities @BenchPosition) $
-    useStore [||\(SparseSetsStorable _ v) -> v||] (sparseSetStorableCapabilities @BenchVelocity) $
-      foldl' (\b _ -> b >>> applyVelocity) applyVelocity [1 .. 5]
-        >>> cfold [||(\(BenchPosition a b) -> Sum a + Sum b)||]
-        >>> SimulationArr [||getSum||]
-
-applyVelocity :: Simulation w a ()
-applyVelocity = cmap [||\(BenchPosition a b, BenchVelocity da db) -> BenchPosition (a + da) (b + db)||]
+makeSimulationBench :: World (Store IO) -> Code Q (IO (Bench Int))
+makeSimulationBench world =
+  [||
+  do
+    let (computeWorldEnvironment, alloc) =
+          $$(compile @_ @IO world allocateEntities)
+    let (_, run) = $$(compile world applyVelocity)
+    worldEnvironment <- computeWorldEnvironment
+    alloc worldEnvironment ()
+    pure $ Bench $ run worldEnvironment ()
+  ||]

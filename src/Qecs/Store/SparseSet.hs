@@ -1,10 +1,13 @@
 module Qecs.Store.SparseSet where
 
 import Control.DeepSeq
+import Data.Constraint
+import Data.Proxy
 import Data.SparseSet.Boxed qualified as SB
 import Data.SparseSet.Storable qualified as SS
 import Data.SparseSet.Unboxed qualified as SU
 import Foreign (Storable)
+import Language.Haskell.TH
 import Qecs.Entity
 import Qecs.Store.Store
 import Type.Reflection (Typeable)
@@ -12,10 +15,15 @@ import Type.Reflection (Typeable)
 newtype SparseSet a = SparseSet (SB.SparseSetBoxed a) deriving (NFData)
 
 -- TODO: Need to make the sparse size according to the size of the entity store
-sparseSetStore :: IO (SparseSet a)
-sparseSetStore = SparseSet <$> SB.create 50000 10000
 
-sparseSetCapabilities :: (Typeable a) => StoreCapabilities (SparseSet a) a
+ensureTypeArg :: Proxy a -> f a -> f a
+ensureTypeArg _ = id
+
+sparseSetStore :: (Typeable a) => Store IO a
+sparseSetStore =
+  Store sparseSetCapabilities [||SparseSet <$> SB.create @_ @IO 50000 10000||]
+
+sparseSetCapabilities :: (Typeable a) => StoreCapabilities SparseSet a
 sparseSetCapabilities =
   defaultStoreCapabilities
     { read = [||\(SparseSet sparseSet) (Entity key) -> SB.unsafeLookup sparseSet key||],
@@ -24,19 +32,22 @@ sparseSetCapabilities =
       has = [||\(SparseSet sparseSet) (Entity key) -> SB.unsafeContains sparseSet key||],
       members = [||\(SparseSet sparseSet) -> SB.size sparseSet||],
       iterate =
-          [||
-          \(SparseSet sparseSet) f ->
-            SB.iterate sparseSet (\key val -> f (Entity key) val)
-          ||]
+        [||
+        \(SparseSet sparseSet) f ->
+          SB.iterate sparseSet (\key val -> f (Entity key) val)
+        ||]
     }
 
 newtype SparseSetStorable a = SparseSetStorable (SS.SparseSetStorable a) deriving (NFData)
 
 -- TODO: Need to make the sparse size according to the size of the entity store
-sparseSetStorableStore :: (Storable a) => IO (SparseSetStorable a)
-sparseSetStorableStore = SparseSetStorable <$> SS.create 50000 10000
+sparseSetStorableStore :: forall a. (Storable a, Typeable a) => Code Q (Proxy a) -> Store IO a
+sparseSetStorableStore proxy =
+  Store
+    sparseSetStorableCapabilities
+    [||ensureTypeArg $$proxy . SparseSetStorable <$> SS.create @_ @IO 50000 10000||]
 
-sparseSetStorableCapabilities :: (Typeable a, Storable a) => StoreCapabilities (SparseSetStorable a) a
+sparseSetStorableCapabilities :: (Typeable a, Storable a) => StoreCapabilities SparseSetStorable a
 sparseSetStorableCapabilities =
   defaultStoreCapabilities
     { read = [||\(SparseSetStorable sparseSet) (Entity key) -> SS.unsafeLookup sparseSet key||],
@@ -45,19 +56,22 @@ sparseSetStorableCapabilities =
       has = [||\(SparseSetStorable sparseSet) (Entity key) -> SS.unsafeContains sparseSet key||],
       members = [||\(SparseSetStorable sparseSet) -> SS.size sparseSet||],
       iterate =
-          [||
-          \(SparseSetStorable sparseSet) f ->
-            SS.iterate sparseSet (\key val -> f (Entity key) val)
-          ||]
+        [||
+        \(SparseSetStorable sparseSet) f ->
+          SS.iterate sparseSet (\key val -> f (Entity key) val)
+        ||]
     }
 
 newtype SparseSetUnboxed a = SparseSetUnboxed (SU.SparseSetUnboxed a) deriving (NFData)
 
 -- TODO: Need to make the sparse size according to the size of the entity store
-sparseSetUnboxedStore :: (SU.Unbox a) => IO (SparseSetUnboxed a)
-sparseSetUnboxedStore = SparseSetUnboxed <$> SU.create 50000 10000
+sparseSetUnboxedStore :: forall a. (SU.Unbox a, Typeable a) => Store IO a
+sparseSetUnboxedStore =
+  Store
+    sparseSetUnboxedCapabilities
+    [||(SparseSetUnboxed <$> SU.create @_ @IO 50000 10000)||]
 
-sparseSetUnboxedCapabilities :: (Typeable a, SU.Unbox a) => StoreCapabilities (SparseSetUnboxed a) a
+sparseSetUnboxedCapabilities :: (Typeable a, SU.Unbox a) => StoreCapabilities SparseSetUnboxed a
 sparseSetUnboxedCapabilities =
   defaultStoreCapabilities
     { read = [||\(SparseSetUnboxed sparseSet) (Entity key) -> SU.unsafeLookup sparseSet key||],
@@ -66,8 +80,8 @@ sparseSetUnboxedCapabilities =
       has = [||\(SparseSetUnboxed sparseSet) (Entity key) -> SU.unsafeContains sparseSet key||],
       members = [||\(SparseSetUnboxed sparseSet) -> SU.size sparseSet||],
       iterate =
-          [||
-          \(SparseSetUnboxed sparseSet) f ->
-            SU.iterate sparseSet (\key val -> f (Entity key) val)
-          ||]
+        [||
+        \(SparseSetUnboxed sparseSet) f ->
+          SU.iterate sparseSet (\key val -> f (Entity key) val)
+        ||]
     }
