@@ -18,6 +18,7 @@ import Qecs.Component
     ComponentId (..),
     SomeComponent (SomeComponent),
   )
+import Qecs.ComponentTracker
 import Qecs.Entity
 import Qecs.Store.Store
 import Unsafe.Coerce
@@ -29,8 +30,8 @@ runtimeStore = error "Runtime store was accessed without initialisation"
 
 getStoreForComponent :: Component a -> CompileM (RuntimeStoreAndCapabilities a)
 getStoreForComponent component@(Component tr) = do
-  activeStores <- view #componentStores <$> askCompileEnvironment
-  pure $ case M.lookup (SomeComponent component) activeStores of
+  componentStores <- view #componentStores <$> askCompileEnvironment
+  pure $ case M.lookup (SomeComponent component) componentStores of
     Nothing -> error $ "Store for component " <> show tr <> " is not available."
     Just (componentId, SomeStoreCapabilities storeCapabilities) ->
       RuntimeStoreAndCapabilities (unsafeCoerce storeCapabilities) (getComponentStore componentId)
@@ -43,23 +44,35 @@ getStoreForComponent component@(Component tr) = do
         pure $ unsafeCoerce (runtimeStores V.! componentId)
       ||]
 
+getComponentId :: Component a -> CompileM ComponentId
+getComponentId component@(Component tr) = do
+  componentStores <- view #componentStores <$> askCompileEnvironment
+  pure $ case M.lookup (SomeComponent component) componentStores of
+    Nothing -> error $ "Store for component " <> show tr <> " is not available."
+    Just (componentId, _) -> componentId
+
 data WorldEnvironment = WorldEnvironment
   { runtimeStores :: !(V.Vector RuntimeStore),
-    entityStore :: !(Entities Word64)
+    entityStore :: !Entities,
+    componentTracker :: ComponentTracker
   }
   deriving (Generic)
 
 getRuntimeStores :: ExecutionM (V.Vector RuntimeStore)
 getRuntimeStores = view #runtimeStores <$> askWorldEnvironment
 
-getEntities :: ExecutionM (Entities Word64)
+getEntities :: ExecutionM Entities
 getEntities = view #entityStore <$> askWorldEnvironment
+
+getComponentTracker :: ExecutionM ComponentTracker
+getComponentTracker = view #componentTracker <$> askWorldEnvironment
 
 data CompileState = CompileState
   deriving (Generic)
 
 data CompileEnvironment = CompileEnvironment
-  { componentStores :: M.Map SomeComponent (ComponentId, SomeStoreCapabilities)
+  { componentStores :: M.Map SomeComponent (ComponentId, SomeStoreCapabilities),
+    componentTrackerCode :: ComponentTrackerCode
   }
   deriving (Generic)
 
@@ -78,7 +91,7 @@ putCompileState s = CompileM $ ReaderT $ const $ put s
 modifyCompileState :: (CompileState -> CompileState) -> CompileM ()
 modifyCompileState f = CompileM $ ReaderT $ const $ modify f
 
-askCompileEnvironment :: CompileM (CompileEnvironment)
+askCompileEnvironment :: CompileM CompileEnvironment
 askCompileEnvironment = CompileM ask
 
 localCompileEnvironment :: (CompileEnvironment -> CompileEnvironment) -> CompileM a -> CompileM a
@@ -92,14 +105,15 @@ askWorldEnvironment = ExecutionM ask
 runExecutionM :: WorldEnvironment -> ExecutionM a -> IO a
 runExecutionM env (ExecutionM action) = runReaderT action env
 
-generateWorldEnvironment :: (HTraversable w, MonadIO m) => w (Store m) -> Code Q (m WorldEnvironment)
-generateWorldEnvironment world =
+generateWorldEnvironment :: (HTraversable w, MonadIO m) => w (Store m) -> CompileM (Code Q (m WorldEnvironment))
+generateWorldEnvironment world = do
+  compileEnvironment <- askCompileEnvironment
   let storesQ =
         fmap snd $
           sortOn fst $
             M.elems $
               traverseFold
-                ( \store@(Store sc create) stores ->
+                ( \store@(Store sc _) stores ->
                     M.insert
                       (SomeComponent $ sc ^. #component)
                       ( ComponentId $
@@ -114,27 +128,31 @@ generateWorldEnvironment world =
       liftedStores =
         unsafeCodeCoerce $
           foldr (\a b -> [|(:) <$> $a <*> $b|]) [|pure []|] storeExpressions
-   in [||
-      do
-        createdStores <- $$liftedStores
-        WorldEnvironment (V.fromList createdStores)
-          <$> liftIO
-            (createEntities 50000)
-      ||]
-
-
+  pure
+    [||
+    do
+      createdStores <- $$liftedStores
+      WorldEnvironment (V.fromList createdStores)
+        <$> liftIO
+          (createEntities 50000)
+        <*> liftIO
+          ($$(compileEnvironment ^. #componentTrackerCode % #create) 50000)
+    ||]
 
 generateCompileEnvironment :: (HTraversable w) => w (Store f) -> CompileEnvironment
-generateCompileEnvironment =
-  CompileEnvironment
-    . traverseFold
-      ( \(Store sc _) stores ->
-          M.insert
-            (SomeComponent $ sc ^. #component)
-            ( ComponentId $
-                M.size stores,
-              SomeStoreCapabilities sc
-            )
-            stores
-      )
-      M.empty
+generateCompileEnvironment world =
+  let stores =
+        traverseFold
+          ( \(Store sc _) stores ->
+              M.insert
+                (SomeComponent $ sc ^. #component)
+                ( ComponentId $
+                    M.size stores,
+                  SomeStoreCapabilities sc
+                )
+                stores
+          )
+          M.empty
+          world
+      componentTracker = createComponentTrackerCode (M.size stores)
+   in CompileEnvironment stores componentTracker

@@ -32,6 +32,24 @@ instance HTraversable (Bundle a) where
       <*> htraverse f b
       <*> htraverse f c
 
+instance HFoldable Identity Bundle where
+  hfold _ empty BundleEmpty = empty
+  hfold _ _ (BundleSingle f) = f
+  hfold combine empty (BundleTwo a b) =
+    combine
+      (VariableFunction (Identity id) (Identity id))
+      (hfold combine empty a)
+      (hfold combine empty b)
+  hfold combine empty (BundleThree a b c) =
+    combine
+      (VariableFunction (Identity (\((a, b), c) -> (a, b, c))) (Identity (\(a, b, c) -> ((a, b), c))))
+      ( combine
+          (VariableFunction (Identity id) (Identity id))
+          (hfold combine empty a)
+          (hfold combine empty b)
+      )
+      (hfold combine empty c)
+
 instance HFoldable (Code Q) Bundle where
   hfold _ empty BundleEmpty = empty
   hfold _ _ (BundleSingle f) = f

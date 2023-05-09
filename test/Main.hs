@@ -40,7 +40,7 @@ ecsTests =
       testCase "Query" $ do
         run <- queryProgram
         result <- run 0
-        result @?= 100
+        result @?= 110
     ]
 
 sparseSetTests :: TestTree

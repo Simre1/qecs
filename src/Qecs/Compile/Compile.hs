@@ -19,7 +19,7 @@ import Language.Haskell.TH qualified as TH
 import LiftType (typeRepToType)
 import Optics.Core
 import Qecs.Bundle (Bundle (..), BundleRead (..), BundleWrite (..))
-import Qecs.Compile.CreateQuery (WriteF (..), compileQuery, compileQueryIO, writeBundle)
+import Qecs.Compile.CreateQuery (WriteF (..), addEntityComponents, compileQuery, compileQueryIO, entityComponentsFromBundle, writeBundle, writeEntityComponents)
 import Qecs.Compile.Environment
 import Qecs.Compile.Optimize (optimize)
 import Qecs.Component
@@ -44,16 +44,15 @@ newtype Coded m a = Coded (Code Q (m a))
 compile :: (HTraversable w, MonadIO m) => w (Store m) -> Simulation a b -> Code Q (m WorldEnvironment, WorldEnvironment -> a -> IO b)
 compile world simulation =
   let compileEnvironment = generateCompileEnvironment world
-      (simulate, _) =
+      ((makeWorldEnvironmentQ, simulationQ), _) =
         runCompileM compileEnvironment CompileState $
-          generateSimulate simulation
+          (,) <$> generateWorldEnvironment world <*> generateSimulate simulation
    in [||
-      ( $$(generateWorldEnvironment world),
-        \worldEnvironment -> runExecutionM worldEnvironment . $$(simulate)
+      ( $$makeWorldEnvironmentQ,
+        \worldEnvironment -> runExecutionM worldEnvironment . $$(simulationQ)
       )
       ||]
   where
-
     generateSimulate :: forall a b. Simulation a b -> CompileM (Code Q (a -> ExecutionM b))
     generateSimulate = \case
       SimulationArr f -> pure [||pure . $$(f)||]
@@ -77,7 +76,7 @@ compile world simulation =
             write' <- $$write
             entityStore <- getEntities
             for bundles $ \bundle -> liftIO $ do
-              entity <- nextEntity entityStore
+              entity <- createEntity entityStore
               write' entity bundle
               pure entity
           ||]

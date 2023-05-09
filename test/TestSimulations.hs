@@ -34,7 +34,7 @@ addSimulation = arr [||(+ 10)||] >>> arr [||(+ 20)||]
 
 querySimulation :: Simulation Int Int
 querySimulation =
-  spure [||[(Position 20 20, Velocity 0 0), (Position 20 20, Velocity 10 10)]||]
+  spure [||[(Position 20 20, Velocity 5 5), (Position 20 20, Velocity 10 10)]||]
     >>> makeEntities
     >>> cmap [||\(Position a b, Velocity da db) -> Position (a + da) (b + db)||]
     >>> cfold [||\(Position a b) -> Sum a + Sum b||]

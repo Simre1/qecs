@@ -3,13 +3,12 @@
 
 module Qecs.Component where
 
-import Data.Proxy
 import Type.Reflection (SomeTypeRep (SomeTypeRep), TypeRep, Typeable, typeRep)
-import Unsafe.Coerce (unsafeCoerce)
+import Language.Haskell.TH.Lift (Lift)
 
 newtype Component a = Component (TypeRep a) deriving (Show, Eq, Ord)
 
-newtype ComponentId = ComponentId Int deriving (Show, Eq, Ord)
+newtype ComponentId = ComponentId Int deriving (Show, Eq, Ord, Lift)
 
 describeComponent :: (Typeable a) => Component a
 describeComponent = Component typeRep

@@ -50,6 +50,9 @@ library
         Qecs.Store.SparseSet
         Qecs.Entity
         Qecs.Compile.Optimize
+        Qecs.ComponentTracker
+        
+
     build-depends:    
         base ^>=4.17.0.0,
         containers,
@@ -60,7 +63,9 @@ library
         th-lift,
         lift-type,
         deepseq,
-        constraints
+        constraints,
+        wide-word,
+        ghc-prim
     hs-source-dirs:   src
     ghc-options: -O2
 

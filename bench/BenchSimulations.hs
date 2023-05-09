@@ -6,13 +6,14 @@ import Control.DeepSeq
 import Control.HigherKindedData
 import Data.Foldable (Foldable (..))
 import Data.Monoid
+import Debug.Trace
 import Foreign (Storable (..), castPtr, plusPtr)
 import GHC.Generics
 import Language.Haskell.TH
 import Qecs.Compile.Compile
+import Qecs.Compile.Environment (WorldEnvironment (WorldEnvironment))
 import Qecs.Simulation
 import Qecs.Store.Store
-import Qecs.Compile.Environment (WorldEnvironment(WorldEnvironment))
 
 data World f = World
   { position :: f Position,
