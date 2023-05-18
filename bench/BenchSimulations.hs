@@ -4,15 +4,16 @@ module BenchSimulations where
 
 import Control.DeepSeq
 import Control.HigherKindedData
-import Data.Foldable (Foldable (..))
+import Data.Foldable (Foldable (..), traverse_)
 import Data.Monoid
 import Debug.Trace
 import Foreign (Storable (..), castPtr, plusPtr)
 import GHC.Generics
 import Language.Haskell.TH
 import Qecs.Compile.Compile
-import Qecs.Compile.Environment (WorldEnvironment (WorldEnvironment))
+import Qecs.Compile.Environment
 import Qecs.Simulation
+import Qecs.Resource
 import Qecs.Store.Store
 
 data World f = World
@@ -66,11 +67,12 @@ instance Storable Velocity where
 
 allocateEntities :: Simulation () ()
 allocateEntities =
-  spure [||replicate 1000 (Position 0 0, Velocity 1 1)||]
-    >>> makeEntities
-    >>> spure [||replicate 9000 (Position 0 0)||]
-    >>> makeEntities
-    >>> SimulationPure [||()||]
+  arrMR
+    [||
+    \(New new1, New new2) _ -> do
+      traverse_ new1 $ replicate 1000 (Position 0 0, Velocity 1 1)
+      traverse_ new2 $ replicate 9000 (Position 0 0)
+    ||]
 
 applyVelocity :: Simulation () Int
 applyVelocity =

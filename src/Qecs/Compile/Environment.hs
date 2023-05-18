@@ -20,21 +20,20 @@ import Qecs.Component
   )
 import Qecs.ComponentTracker
 import Qecs.Entity
+import Qecs.ExecutionM
 import Qecs.Store.Store
 import Unsafe.Coerce
-
-data RuntimeStoreAndCapabilities a = forall s. RuntimeStoreAndCapabilities (StoreCapabilities s a) (Code Q (ExecutionM (s a)))
 
 runtimeStore :: RuntimeStore
 runtimeStore = error "Runtime store was accessed without initialisation"
 
-getStoreForComponent :: Component a -> CompileM (RuntimeStoreAndCapabilities a)
+getStoreForComponent :: Component a -> CompileM (Store ExecutionM a)
 getStoreForComponent component@(Component tr) = do
   componentStores <- view #componentStores <$> askCompileEnvironment
   pure $ case M.lookup (SomeComponent component) componentStores of
     Nothing -> error $ "Store for component " <> show tr <> " is not available."
     Just (componentId, SomeStoreCapabilities storeCapabilities) ->
-      RuntimeStoreAndCapabilities (unsafeCoerce storeCapabilities) (getComponentStore componentId)
+      Store (unsafeCoerce storeCapabilities) (getComponentStore componentId)
   where
     getComponentStore :: ComponentId -> Code Q (ExecutionM s)
     getComponentStore (ComponentId componentId) =
@@ -50,22 +49,6 @@ getComponentId component@(Component tr) = do
   pure $ case M.lookup (SomeComponent component) componentStores of
     Nothing -> error $ "Store for component " <> show tr <> " is not available."
     Just (componentId, _) -> componentId
-
-data WorldEnvironment = WorldEnvironment
-  { runtimeStores :: !(V.Vector RuntimeStore),
-    entityStore :: !Entities,
-    componentTracker :: ComponentTracker
-  }
-  deriving (Generic)
-
-getRuntimeStores :: ExecutionM (V.Vector RuntimeStore)
-getRuntimeStores = view #runtimeStores <$> askWorldEnvironment
-
-getEntities :: ExecutionM Entities
-getEntities = view #entityStore <$> askWorldEnvironment
-
-getComponentTracker :: ExecutionM ComponentTracker
-getComponentTracker = view #componentTracker <$> askWorldEnvironment
 
 data CompileState = CompileState
   deriving (Generic)
@@ -96,14 +79,6 @@ askCompileEnvironment = CompileM ask
 
 localCompileEnvironment :: (CompileEnvironment -> CompileEnvironment) -> CompileM a -> CompileM a
 localCompileEnvironment f (CompileM action) = CompileM $ local f action
-
-newtype ExecutionM a = ExecutionM (ReaderT WorldEnvironment IO a) deriving (Functor, Applicative, Monad, MonadIO)
-
-askWorldEnvironment :: ExecutionM WorldEnvironment
-askWorldEnvironment = ExecutionM ask
-
-runExecutionM :: WorldEnvironment -> ExecutionM a -> IO a
-runExecutionM env (ExecutionM action) = runReaderT action env
 
 generateWorldEnvironment :: (HTraversable w, MonadIO m) => w (Store m) -> CompileM (Code Q (m WorldEnvironment))
 generateWorldEnvironment world = do

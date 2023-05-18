@@ -30,6 +30,8 @@ data Store f a where
 
 data SomeStore f = forall a. SomeStore (Store f a)
 
+data StoreForComponent a = forall f. StoreForComponent (Store f a)
+
 data RuntimeStore
 
 makeRuntimeStore :: (Functor f) => Store f a -> Code Q (f RuntimeStore)

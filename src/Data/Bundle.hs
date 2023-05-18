@@ -1,23 +1,18 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Qecs.Bundle where
+module Data.Bundle where
 
 import Control.HigherKindedData
 import Data.Functor.Identity
 import Language.Haskell.TH
-import Qecs.Component (Component, describeComponent)
-import Type.Reflection (Typeable)
-
-newtype BundleRead a = BundleRead (Component a) deriving (Eq, Show)
-
-newtype BundleWrite a = BundleWrite (Component a) deriving (Eq, Show)
 
 data Bundle a f where
   BundleEmpty :: Bundle () f
   BundleSingle :: f a -> Bundle a f
   BundleTwo :: Bundle a f -> Bundle b f -> Bundle (a, b) f
   BundleThree :: Bundle a f -> Bundle b f -> Bundle c f -> Bundle (a, b, c) f
+  BundleFour :: Bundle a f -> Bundle b f -> Bundle c f -> Bundle d f -> Bundle (a, b, c, d) f
 
 instance HFunctor (Bundle a) where
   hmap f = runIdentity . htraverse (Identity . f)
@@ -31,6 +26,12 @@ instance HTraversable (Bundle a) where
       <$> htraverse f a
       <*> htraverse f b
       <*> htraverse f c
+  htraverse f (BundleFour a b c d) =
+    BundleFour
+      <$> htraverse f a
+      <*> htraverse f b
+      <*> htraverse f c
+      <*> htraverse f d
 
 instance HFoldable Identity Bundle where
   hfold _ empty BundleEmpty = empty
@@ -49,6 +50,26 @@ instance HFoldable Identity Bundle where
           (hfold combine empty b)
       )
       (hfold combine empty c)
+  hfold combine empty (BundleFour a b c d) =
+    combine
+      ( VariableFunction
+          ( Identity
+              ( \((a, b), (c, d)) ->
+                  (a, b, c, d)
+              )
+          )
+          (Identity (\(a, b, c, d) -> ((a, b), (c, d))))
+      )
+      ( combine
+          (VariableFunction (Identity id) (Identity id))
+          (hfold combine empty a)
+          (hfold combine empty b)
+      )
+      ( combine
+          (VariableFunction (Identity id) (Identity id))
+          (hfold combine empty c)
+          (hfold combine empty d)
+      )
 
 instance HFoldable (Code Q) Bundle where
   hfold _ empty BundleEmpty = empty
@@ -67,6 +88,26 @@ instance HFoldable (Code Q) Bundle where
           (hfold combine empty b)
       )
       (hfold combine empty c)
+  hfold combine empty (BundleFour a b c d) =
+    combine
+      ( VariableFunction
+          [||
+            ( \((a, b), (c, d)) ->
+                (a, b, c, d)
+            )
+            ||]
+          [||(\(a, b, c, d) -> ((a, b), (c, d)))||]
+      )
+      ( combine
+          (VariableFunction [||id||] [||id||])
+          (hfold combine empty a)
+          (hfold combine empty b)
+      )
+      ( combine
+          (VariableFunction [||id||] [||id||])
+          (hfold combine empty c)
+          (hfold combine empty d)
+      )
 
 type family BaseCase a where
   BaseCase () = False
@@ -94,11 +135,13 @@ instance (GetBundle f a, GetBundle f b, GetBundle f c) => GetBundle' False f (a,
       (getBundle' @(BaseCase b) @f @b)
       (getBundle' @(BaseCase c) @f @c)
 
-instance (Typeable a) => GetBundle' True BundleRead a where
-  getBundle' = BundleSingle $ BundleRead $ describeComponent @a
-
-instance (Typeable a) => GetBundle' True BundleWrite a where
-  getBundle' = BundleSingle $ BundleWrite $ describeComponent @a
+instance (GetBundle f a, GetBundle f b, GetBundle f c, GetBundle f d) => GetBundle' False f (a, b, c, d) where
+  getBundle' =
+    BundleFour
+      (getBundle' @(BaseCase a) @f @a)
+      (getBundle' @(BaseCase b) @f @b)
+      (getBundle' @(BaseCase c) @f @c)
+      (getBundle' @(BaseCase d) @f @d)
 
 instance GetBundle' False f () where
   getBundle' = BundleEmpty

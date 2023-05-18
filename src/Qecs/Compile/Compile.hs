@@ -18,12 +18,13 @@ import Language.Haskell.TH (Code (..), Q)
 import Language.Haskell.TH qualified as TH
 import LiftType (typeRepToType)
 import Optics.Core
-import Qecs.Bundle (Bundle (..), BundleRead (..), BundleWrite (..))
-import Qecs.Compile.CreateQuery (WriteF (..), addEntityComponents, compileQuery, compileQueryIO, entityComponentsFromBundle, writeBundle, writeEntityComponents)
+import Qecs.Compile.CreateQuery
 import Qecs.Compile.Environment
+import Qecs.Compile.GetResource
 import Qecs.Compile.Optimize (optimize)
 import Qecs.Component
 import Qecs.Entity
+import Qecs.ExecutionM
 import Qecs.Simulation
 import Qecs.Store.Store
   ( RuntimeStore,
@@ -33,13 +34,12 @@ import Qecs.Store.Store
   )
 import Type.Reflection (SomeTypeRep (SomeTypeRep), TypeRep (..), someTypeRep, typeRep, withTypeable)
 import Unsafe.Coerce (unsafeCoerce)
+import Qecs.Compile.BundleOperations
 
 viewCode :: Code Q a -> Code Q String
 viewCode code = Code $ do
   str <- TH.pprint . TH.unType <$> examineCode code
   examineCode [||str||]
-
-newtype Coded m a = Coded (Code Q (m a))
 
 compile :: (HTraversable w, MonadIO m) => w (Store m) -> Simulation a b -> Code Q (m WorldEnvironment, WorldEnvironment -> a -> IO b)
 compile world simulation =
@@ -57,7 +57,9 @@ compile world simulation =
     generateSimulate = \case
       SimulationArr f -> pure [||pure . $$(f)||]
       SimulationPure x -> pure [||pure . const $$x||]
-      SimulationIO f -> pure [||liftIO . $$(f)||]
+      SimulationIO rs f -> do
+        getResources <- getResourceBundle rs
+        pure [||\a -> $$getResources >>= \r -> liftIO $ $$(f) r a||]
       SimulationSequence s1 s2 -> do
         gS1 <- generateSimulate s1
         gS2 <- generateSimulate s2
@@ -68,16 +70,4 @@ compile world simulation =
         pure [||\(a, b) -> (,) <$> $$(gS1) a <*> $$(gS2) b||]
       SimulationQuery q -> compileQuery q
       SimulationQueryIO qIO -> compileQueryIO qIO
-      SimulationCreateEntity bundle -> do
-        (WriteF write) <- writeBundle bundle
-        pure
-          [||
-          \bundles -> do
-            write' <- $$write
-            entityStore <- getEntities
-            for bundles $ \bundle -> liftIO $ do
-              entity <- createEntity entityStore
-              write' entity bundle
-              pure entity
-          ||]
       _ -> undefined

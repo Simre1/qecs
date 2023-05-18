@@ -5,6 +5,7 @@ module TestSimulations where
 import Control.HigherKindedData (HTraversable (htraverse))
 import Data.Monoid
 import GHC.Generics
+import Qecs.Resource
 import Qecs.Simulation
 import Qecs.Store.Map
 import Qecs.Store.Store
@@ -34,8 +35,26 @@ addSimulation = arr [||(+ 10)||] >>> arr [||(+ 20)||]
 
 querySimulation :: Simulation Int Int
 querySimulation =
-  spure [||[(Position 20 20, Velocity 5 5), (Position 20 20, Velocity 10 10)]||]
-    >>> makeEntities
+  arrMR
+    [||
+    \(New new) _ ->
+      traverse
+        new
+        [ (Position 20 20, Velocity 5 5),
+          (Position 20 20, Velocity 10 10)
+        ]
+    ||]
     >>> cmap [||\(Position a b, Velocity da db) -> Position (a + da) (b + db)||]
     >>> cfold [||\(Position a b) -> Sum a + Sum b||]
     >>> SimulationArr [||getSum||]
+
+resourceSimulation :: Simulation () Int
+resourceSimulation =
+  arrMR [||\(New new) _ -> new (Position 10 10, Velocity 1 1)||]
+    >>> arrMR
+      [||
+      ( \(Get get) entity -> do
+          (Position a b, Velocity c d) <- get entity
+          pure $ sum [a, b, c, d]
+      )
+      ||]

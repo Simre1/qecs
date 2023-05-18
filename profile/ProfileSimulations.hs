@@ -3,7 +3,7 @@
 module ProfileSimulations where
 
 import Control.HigherKindedData
-import Data.Foldable (Foldable (..))
+import Data.Foldable (Foldable (..), traverse_)
 import Data.Monoid
 import Debug.Trace
 import Foreign (Storable (..), castPtr, plusPtr)
@@ -11,6 +11,7 @@ import GHC.Generics
 import Qecs.Simulation
 import Qecs.Store.Map (MapStore, mapStoreCapabilities)
 import Qecs.Store.SparseSet
+import Qecs.Resource
 
 data World f = World
   { position :: f Position,
@@ -63,11 +64,12 @@ instance Storable Velocity where
 
 mapStoreSimulation :: Simulation () Int
 mapStoreSimulation =
-  spure [||replicate 8000 (Velocity 1 1, Position 0 0)||]
-    >>> makeEntities
-    >>> spure [||replicate 2000 (Position 0 0)||]
-    >>> makeEntities
-    >>> SimulationPure [||()||]
+  arrMR
+    [||
+    \(New new1, New new2) _ -> do
+      traverse_ new1 $ replicate 8000 (Velocity 1 1, Position 0 0)
+      traverse_ new2 $ replicate 2000 (Position 0 0)
+    ||]
     >>> foldl' (\b _ -> b >>> applyVelocity) applyVelocity [1 .. 80]
     >>> cfold [||(\(Position a b) -> Sum a + Sum b)||]
     >>> SimulationArr [||getSum||]

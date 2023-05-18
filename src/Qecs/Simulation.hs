@@ -5,10 +5,13 @@
 module Qecs.Simulation where
 
 import Control.Category
+import Data.Bundle
 import Data.Functor.Identity
 import Language.Haskell.TH
-import Qecs.Bundle
 import Qecs.Entity
+import Qecs.ExecutionM
+import Qecs.Resource
+import Qecs.Query
 import Qecs.Store.Store
 import Prelude hiding ((.))
 
@@ -19,18 +22,11 @@ data Simulation a b where
   SimulationParallel :: Simulation a b -> Simulation c d -> Simulation (a, c) (b, d)
   SimulationPure :: Code Q a -> Simulation x a
   SimulationArr :: Code Q (a -> b) -> Simulation a b
-  SimulationIO :: Code Q (a -> IO b) -> Simulation a b
+  SimulationIO :: Bundle rs Resource -> Code Q (rs -> a -> IO b) -> Simulation a b
   SimulationQuery :: Query Identity a b -> Simulation a b
   SimulationQueryIO :: Query IO a b -> Simulation a b
-  SimulationCreateEntity :: Bundle c BundleWrite -> Simulation [c] [Entity]
 
-data Query f a b where
-  QueryMap :: Code Q (i -> f o) -> Bundle i BundleRead -> Bundle o BundleWrite -> Query f a ()
-  QueryMapWithInput :: Code Q (a -> i -> f o) -> Bundle i BundleRead -> Bundle o BundleWrite -> Query f a ()
-  QueryFold :: Code Q b -> Code Q (b -> i -> f b) -> Bundle i BundleRead -> Query f a b
-  QueryFoldWrite :: Code Q b -> Code Q (b -> i -> f (o, b)) -> Bundle i BundleRead -> Bundle o BundleWrite -> Query f a b
-  QueryFoldWithInput :: Code Q b -> Code Q (b -> a -> i -> f b) -> Bundle i BundleRead -> Query f a b
-  QueryFoldWithInputAndWrite :: Code Q b -> Code Q (b -> a -> i -> f (o, b)) -> Bundle i BundleRead -> Bundle o BundleWrite -> Query f a b
+-- SimulationAction :: Actions actions => Code Q (a -> actions -> ExecutionM b) -> Simulation a b
 
 cmap ::
   (GetBundle BundleRead i, GetBundle BundleWrite o) =>
@@ -53,10 +49,7 @@ cfoldM f = SimulationQueryIO $ QueryFold [||mempty||] [||\b i -> (b <>) <$> $$f 
 spure :: Code Q c -> Simulation x c
 spure = SimulationPure
 
-makeEntities :: forall w c. (GetBundle BundleWrite c) => Simulation [c] [Entity]
-makeEntities = SimulationCreateEntity getBundle
-
-instance Category (Simulation) where
+instance Category Simulation where
   id = SimulationId
   (.) = flip SimulationSequence
 
@@ -71,3 +64,9 @@ s1 >>> s2 = SimulationSequence s1 s2
 
 arr :: Code Q (a -> b) -> Simulation a b
 arr = SimulationArr
+
+arrM :: Code Q (a -> IO b) -> Simulation a b
+arrM f = SimulationIO getBundle [||\() -> $$f||]
+
+arrMR :: (GetBundle Resource rs) => Code Q (rs -> a -> IO b) -> Simulation a b
+arrMR f = SimulationIO getBundle [||$$f||]

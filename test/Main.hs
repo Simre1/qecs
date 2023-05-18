@@ -22,6 +22,13 @@ queryProgram = do
   state <- computeState
   pure $ \i -> run state i
 
+resourceProgram :: IO (() -> IO Int)
+resourceProgram = do
+  let (computeState, run) = $$(compile world resourceSimulation)
+
+  state <- computeState
+  pure $ \i -> run state i
+
 main :: IO ()
 main = do
   defaultMain $
@@ -40,7 +47,11 @@ ecsTests =
       testCase "Query" $ do
         run <- queryProgram
         result <- run 0
-        result @?= 110
+        result @?= 110,
+      testCase "Resources" $ do
+        run <- resourceProgram
+        result <- run ()
+        result @?= 22
     ]
 
 sparseSetTests :: TestTree

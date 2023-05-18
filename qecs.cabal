@@ -36,21 +36,27 @@ library
         Data.SparseSet.Boxed
         Data.SparseSet.Storable
         Data.SparseSet.Unboxed
+        Data.Bundle
 
         Qecs.Compile.Compile
         Qecs.Compile.CreateQuery
         Qecs.Compile.MyQ
         Qecs.Compile.Environment
         Qecs.Compile.ExtractField
+        Qecs.Compile.GetResource
+        Qecs.Compile.BundleOperations
+
         Qecs.Simulation
         Qecs.Component
-        Qecs.Bundle
         Qecs.Store.Store
         Qecs.Store.Map
         Qecs.Store.SparseSet
         Qecs.Entity
         Qecs.Compile.Optimize
         Qecs.ComponentTracker
+        Qecs.ExecutionM
+        Qecs.Resource
+        Qecs.Query
         
 
     build-depends:    
