@@ -29,10 +29,16 @@ runtimeStore = error "Runtime store was accessed without initialisation"
 
 getStoreForComponent :: Component a -> CompileM (Store ExecutionM a)
 getStoreForComponent component@(Component tr) = do
-  componentStores <- view #componentStores <$> askCompileEnvironment
-  pure $ case M.lookup (SomeComponent component) componentStores of
+  componentIds <- view #componentIds <$> askCompileEnvironment
+  case M.lookup (SomeComponent component) componentIds of
     Nothing -> error $ "Store for component " <> show tr <> " is not available."
-    Just (componentId, SomeStoreCapabilities storeCapabilities) ->
+    Just componentId -> getStoreForComponentId componentId
+
+getStoreForComponentId :: ComponentId -> CompileM (Store ExecutionM a)
+getStoreForComponentId componentId = do
+  componentStores <- view #componentStores <$> askCompileEnvironment
+  pure $ case componentStores M.! componentId of
+    (SomeStoreCapabilities storeCapabilities) ->
       Store (unsafeCoerce storeCapabilities) (getComponentStore componentId)
   where
     getComponentStore :: ComponentId -> Code Q (ExecutionM s)
@@ -45,16 +51,17 @@ getStoreForComponent component@(Component tr) = do
 
 getComponentId :: Component a -> CompileM ComponentId
 getComponentId component@(Component tr) = do
-  componentStores <- view #componentStores <$> askCompileEnvironment
-  pure $ case M.lookup (SomeComponent component) componentStores of
+  componentIds <- view #componentIds <$> askCompileEnvironment
+  pure $ case M.lookup (SomeComponent component) componentIds of
     Nothing -> error $ "Store for component " <> show tr <> " is not available."
-    Just (componentId, _) -> componentId
+    Just componentId -> componentId
 
 data CompileState = CompileState
   deriving (Generic)
 
 data CompileEnvironment = CompileEnvironment
-  { componentStores :: M.Map SomeComponent (ComponentId, SomeStoreCapabilities),
+  { componentIds :: M.Map SomeComponent ComponentId,
+    componentStores :: M.Map ComponentId SomeStoreCapabilities,
     componentTrackerCode :: ComponentTrackerCode
   }
   deriving (Generic)
@@ -116,18 +123,22 @@ generateWorldEnvironment world = do
 
 generateCompileEnvironment :: (HTraversable w) => w (Store f) -> CompileEnvironment
 generateCompileEnvironment world =
-  let stores =
+  let (ids, stores) =
         traverseFold
-          ( \(Store sc _) stores ->
-              M.insert
-                (SomeComponent $ sc ^. #component)
-                ( ComponentId $
-                    M.size stores,
-                  SomeStoreCapabilities sc
-                )
-                stores
+          ( \(Store sc _) (ids, stores) ->
+              let componentId = ComponentId $ M.size ids
+               in ( M.insert
+                      (SomeComponent $ sc ^. #component)
+                      componentId
+                      ids,
+                    M.insert
+                      componentId
+                      ( SomeStoreCapabilities sc
+                      )
+                      stores
+                  )
           )
-          M.empty
+          (M.empty, M.empty)
           world
       componentTracker = createComponentTrackerCode (M.size stores)
-   in CompileEnvironment stores componentTracker
+   in CompileEnvironment ids stores componentTracker

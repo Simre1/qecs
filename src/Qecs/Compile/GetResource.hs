@@ -69,3 +69,16 @@ getResourceBundle resourceBundle = do
             pure $ Put $ \entity values -> do
               write entity values
           ||]
+    buildResourceFromWorld (ResourceDelete bundle) = do
+      DeleteF deleteQ <- deleteBundle bundle
+      pure $
+        Compose
+          [||
+          do
+            delete <- $$deleteQ
+            pure $ Delete $ \entity -> do
+              delete entity
+          ||]
+    buildResourceFromWorld ResourceDeleteEntity = do
+        error "Not yet implemented since its pretty hard"
+        

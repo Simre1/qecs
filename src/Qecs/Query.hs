@@ -8,6 +8,8 @@ newtype BundleRead a = BundleRead (Component a) deriving (Eq, Show)
 
 newtype BundleWrite a = BundleWrite (Component a) deriving (Eq, Show)
 
+newtype BundleDelete a = BundleDelete (Component a) deriving (Eq, Show)
+
 instance (Typeable a) => GetBundle' True BundleRead a where
   getBundle' = BundleSingle $ BundleRead $ describeComponent @a
 

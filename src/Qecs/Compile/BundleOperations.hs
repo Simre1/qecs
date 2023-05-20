@@ -1,24 +1,27 @@
 module Qecs.Compile.BundleOperations where
-import Qecs.ExecutionM
-import Language.Haskell.TH
-import Qecs.Entity
+
+import Control.Applicative
+import Control.HigherKindedData
+import Control.Monad
+import Control.Monad.IO.Class
 import Data.Bundle
-import Qecs.Query
+import Data.Coerce
+import Data.Functor.Identity
+import Language.Haskell.TH
+import Optics.Core
 import Qecs.Compile.Environment
 import Qecs.Component
-import Data.Functor.Identity
-import Data.Coerce
-import Control.Applicative
 import Qecs.ComponentTracker
+import Qecs.Entity
+import Qecs.ExecutionM
+import Qecs.Query
 import Qecs.Store.Store
-import Control.HigherKindedData
-import Optics.Core
-import Control.Monad.IO.Class
-import Control.Monad
 
 newtype ReadF a = ReadF (Code Q (ExecutionM (Entity -> IO a)))
 
 newtype WriteF a = WriteF (Code Q (ExecutionM (Entity -> a -> IO ())))
+
+newtype DeleteF a = DeleteF (Code Q (ExecutionM (Entity -> IO ())))
 
 data IterateF b a = IterateF
   { iterate :: Code Q (ExecutionM ((Entity -> a -> IO ()) -> IO ())),
@@ -91,6 +94,36 @@ writeBundle bundle = do
       )
       (WriteF [||pure $ \_ _ -> pure ()||])
       bundleWrite
+
+deleteBundle :: Bundle i BundleDelete -> CompileM (DeleteF i)
+deleteBundle bundle = do
+  bundleDelete <-
+    htraverse
+      ( \(BundleDelete c) -> do
+          (Store storeCapabilities getStore) <- getStoreForComponent c
+          pure $
+            DeleteF
+              [||
+              do
+                s <- $$getStore
+                pure $ \entity -> liftIO $ do
+                  $$(storeCapabilities ^. #delete) s entity
+              ||]
+      )
+      bundle
+  pure $
+    hfold @Identity
+      ( \_ (DeleteF deleteQX) (DeleteF deleteQY) ->
+          DeleteF
+            [||
+            do
+              deleteX <- $$deleteQX
+              deleteY <- $$deleteQY
+              pure $ \e -> deleteX e *> deleteY e
+            ||]
+      )
+      (DeleteF [||pure $ \_ -> pure ()||])
+      bundleDelete
 
 iterateBundle :: Bundle i BundleRead -> CompileM (IterateF b i)
 iterateBundle bundle = do
@@ -213,4 +246,14 @@ containsEntityComponents = do
       $$(componentTrackerCode ^. #containsComponents)
         entityComponents
         <$> $$(componentTrackerCode ^. #readEntityComponents) componentTracker e
+    ||]
+
+getComponentIds :: CompileM (Code Q (ComponentTracker -> Entity -> IO [ComponentId]))
+getComponentIds = do
+  componentTrackerCode <- view #componentTrackerCode <$> askCompileEnvironment
+  pure
+    [||
+    \componentTracker e -> do
+      entityComponents <- $$(componentTrackerCode ^. #readEntityComponents) componentTracker e
+      pure $ $$(componentTrackerCode ^. #getComponentIds) entityComponents
     ||]
